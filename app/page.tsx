@@ -245,27 +245,29 @@ export default function Home() {
     return (
       <div
         key={task.id}
-        className={`rounded-lg border bg-white p-2 text-xs shadow-sm ${
+        className={`rounded-lg border bg-white p-2.5 text-sm shadow-sm ${
           overdue ? "border-red-200" : "border-slate-200"
         }`}
       >
-        <div className="flex items-center justify-between gap-1">
-          <span className="truncate font-medium">{task.name}</span>
+        <div className="flex items-start justify-between gap-2">
+          <span className="break-words font-medium leading-snug">{task.name}</span>
           <button
             onClick={() => completeTask(task.id)}
             title="Afvinken"
-            className="shrink-0 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold text-white hover:bg-emerald-500"
+            className="shrink-0 rounded-full bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-500"
           >
             ✓
           </button>
         </div>
-        <span className="text-slate-400">{FREQUENCY_LABELS[task.frequency]}</span>
+        <span className="mt-1 block text-xs text-slate-400">
+          {FREQUENCY_LABELS[task.frequency]}
+        </span>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
+    <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 lg:max-w-6xl">
       <header className="mb-6">
         <h1 className="text-2xl font-bold">Huishoudtaken</h1>
         <p className="text-sm text-slate-500">
@@ -405,25 +407,25 @@ export default function Home() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-7">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-7">
             {weekDays.map((day, i) => {
               const dayTasks = tasksByDay.get(day.getTime()) ?? [];
               const isToday = day.getTime() === startOfDayOf(new Date()).getTime();
               return (
                 <div
                   key={day.getTime()}
-                  className={`rounded-xl border p-2 ${
+                  className={`rounded-xl border p-3 ${
                     isToday ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-white"
                   }`}
                 >
                   <p
-                    className={`mb-2 text-xs font-semibold ${
+                    className={`mb-2 text-sm font-semibold ${
                       isToday ? "text-indigo-600" : "text-slate-500"
                     }`}
                   >
                     {WEEKDAY_LABELS[i]} {day.getDate()}/{day.getMonth() + 1}
                   </p>
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     {dayTasks.length === 0 && (
                       <p className="text-xs text-slate-300">–</p>
                     )}
