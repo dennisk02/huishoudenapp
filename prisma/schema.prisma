@@ -16,11 +16,12 @@ enum Frequency {
 }
 
 model Member {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  color       String   @default("#6366f1")
-  createdAt   DateTime @default(now())
-  completions Completion[]
+  id            String   @id @default(cuid())
+  name          String   @unique
+  color         String   @default("#6366f1")
+  createdAt     DateTime @default(now())
+  completions   Completion[]
+  assignedTasks Task[]   @relation("TaskAssignee")
 }
 
 model Task {
@@ -30,6 +31,8 @@ model Task {
   dueDate     DateTime
   createdAt   DateTime  @default(now())
   completions Completion[]
+  assigneeId  String?
+  assignee    Member?   @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
 }
 
 model Completion {

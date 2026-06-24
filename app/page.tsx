@@ -21,6 +21,8 @@ type Task = {
   frequency: Frequency;
   dueDate: string;
   completions: Completion[];
+  assigneeId: string | null;
+  assignee: Member | null;
 };
 
 function startOfToday() {
@@ -76,9 +78,11 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"list" | "week">("list");
   const [weekOffset, setWeekOffset] = useState(0);
+  const [onlyMine, setOnlyMine] = useState(false);
 
   const [newTaskName, setNewTaskName] = useState("");
   const [newTaskFrequency, setNewTaskFrequency] = useState<Frequency>("WEEKLY");
+  const [newTaskAssigneeId, setNewTaskAssigneeId] = useState<string>("");
   const [newMemberName, setNewMemberName] = useState("");
 
   async function loadAll() {
@@ -101,12 +105,17 @@ export default function Home() {
     }
   }, [members, activeMemberId]);
 
+  const filteredTasks = useMemo(() => {
+    if (!onlyMine || !activeMemberId) return tasks;
+    return tasks.filter((t) => t.assigneeId === activeMemberId);
+  }, [tasks, onlyMine, activeMemberId]);
+
   const sortedTasks = useMemo(
     () =>
-      [...tasks].sort(
+      [...filteredTasks].sort(
         (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
       ),
-    [tasks]
+    [filteredTasks]
   );
 
   const weekStart = useMemo(
@@ -158,14 +167,38 @@ export default function Home() {
     await fetch("/api/tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newTaskName.trim(), frequency: newTaskFrequency }),
+      body: JSON.stringify({
+        name: newTaskName.trim(),
+        frequency: newTaskFrequency,
+        assigneeId: newTaskAssigneeId || null,
+      }),
     });
     setNewTaskName("");
+    setNewTaskAssigneeId("");
     loadAll();
   }
 
   async function removeTask(id: string) {
     await fetch(`/api/tasks/${id}`, { method: "DELETE" });
+    loadAll();
+  }
+
+  async function reassignTask(id: string, assigneeId: string) {
+    await fetch(`/api/tasks/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assigneeId: assigneeId || null }),
+    });
+    loadAll();
+  }
+
+  async function rescheduleTask(id: string, dueDate: string) {
+    if (!dueDate) return;
+    await fetch(`/api/tasks/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dueDate }),
+    });
     loadAll();
   }
 
@@ -194,11 +227,27 @@ export default function Home() {
         }`}
       >
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{task.name}</span>
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
               {FREQUENCY_LABELS[task.frequency]}
             </span>
+            <select
+              value={task.assigneeId ?? ""}
+              onChange={(e) => reassignTask(task.id, e.target.value)}
+              className="rounded-full border px-2 py-0.5 text-xs"
+              style={{
+                borderColor: task.assignee?.color ?? "#e2e8f0",
+                color: task.assignee?.color ?? "#64748b",
+              }}
+            >
+              <option value="">Iedereen</option>
+              {members.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
           </div>
           <p
             className={`mt-0.5 text-xs ${
@@ -242,6 +291,7 @@ export default function Home() {
 
   function renderCompactTask(task: Task) {
     const overdue = isOverdue(task);
+    const dateValue = new Date(task.dueDate).toISOString().slice(0, 10);
     return (
       <div
         key={task.id}
@@ -261,7 +311,15 @@ export default function Home() {
         </div>
         <span className="mt-1 block text-xs text-slate-400">
           {FREQUENCY_LABELS[task.frequency]}
+          {task.assignee && ` · ${task.assignee.name}`}
         </span>
+        <input
+          type="date"
+          value={dateValue}
+          onChange={(e) => rescheduleTask(task.id, e.target.value)}
+          title="Verplaats naar een andere dag"
+          className="mt-1.5 w-full rounded border border-slate-200 px-1 py-0.5 text-xs text-slate-500"
+        />
       </div>
     );
   }
@@ -338,6 +396,18 @@ export default function Home() {
               </option>
             ))}
           </select>
+          <select
+            value={newTaskAssigneeId}
+            onChange={(e) => setNewTaskAssigneeId(e.target.value)}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
+          >
+            <option value="">Iedereen</option>
+            {members.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
           <button
             type="submit"
             className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500"
@@ -347,22 +417,33 @@ export default function Home() {
         </form>
       </section>
 
-      <div className="mb-4 flex gap-2">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setView("list")}
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+              view === "list" ? "bg-slate-800 text-white" : "bg-white text-slate-500 border border-slate-200"
+            }`}
+          >
+            Lijst
+          </button>
+          <button
+            onClick={() => setView("week")}
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+              view === "week" ? "bg-slate-800 text-white" : "bg-white text-slate-500 border border-slate-200"
+            }`}
+          >
+            Week
+          </button>
+        </div>
         <button
-          onClick={() => setView("list")}
-          className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-            view === "list" ? "bg-slate-800 text-white" : "bg-white text-slate-500 border border-slate-200"
+          onClick={() => setOnlyMine((v) => !v)}
+          disabled={!activeMemberId}
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium disabled:opacity-40 ${
+            onlyMine ? "bg-indigo-600 text-white" : "bg-white text-slate-500 border border-slate-200"
           }`}
         >
-          Lijst
-        </button>
-        <button
-          onClick={() => setView("week")}
-          className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-            view === "week" ? "bg-slate-800 text-white" : "bg-white text-slate-500 border border-slate-200"
-          }`}
-        >
-          Week
+          {onlyMine ? "Mijn taken" : "Alle taken"}
         </button>
       </div>
 

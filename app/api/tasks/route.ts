@@ -6,6 +6,7 @@ export async function GET() {
   const tasks = await prisma.task.findMany({
     orderBy: { dueDate: "asc" },
     include: {
+      assignee: true,
       completions: {
         orderBy: { completedAt: "desc" },
         take: 5,
@@ -20,6 +21,7 @@ export async function POST(req: Request) {
   const body = await req.json();
   const name = (body.name ?? "").trim();
   const frequency: Frequency = body.frequency ?? "WEEKLY";
+  const assigneeId = (body.assigneeId ?? null) as string | null;
   if (!name) {
     return NextResponse.json({ error: "Naam is verplicht" }, { status: 400 });
   }
@@ -28,7 +30,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Ongeldige frequentie" }, { status: 400 });
   }
   const task = await prisma.task.create({
-    data: { name, frequency, dueDate: startOfDay(new Date()) },
+    data: { name, frequency, dueDate: startOfDay(new Date()), assigneeId },
+    include: { assignee: true },
   });
   return NextResponse.json(task);
 }
