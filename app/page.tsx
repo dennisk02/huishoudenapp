@@ -31,6 +31,8 @@ type Event = {
   description: string | null;
   date: string;
   createdBy: Member | null;
+  assigneeId: string | null;
+  assignee: Member | null;
 };
 
 function startOfToday() {
@@ -55,6 +57,26 @@ function formatDate(dateStr: string) {
     day: "numeric",
     month: "short",
   });
+}
+
+function hasTime(dateStr: string) {
+  const d = new Date(dateStr);
+  return d.getHours() !== 0 || d.getMinutes() !== 0;
+}
+
+function formatTime(dateStr: string) {
+  return new Date(dateStr).toLocaleTimeString("nl-NL", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function toDateTimeLocalValue(dateStr: string) {
+  const d = new Date(dateStr);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours()
+  )}:${pad(d.getMinutes())}`;
 }
 
 function startOfWeek(date: Date) {
@@ -96,6 +118,7 @@ export default function Home() {
   const [newEventTitle, setNewEventTitle] = useState("");
   const [newEventDate, setNewEventDate] = useState("");
   const [newEventDescription, setNewEventDescription] = useState("");
+  const [newEventAssigneeId, setNewEventAssigneeId] = useState("");
 
   async function loadAll() {
     const [tasksRes, membersRes, eventsRes] = await Promise.all([
@@ -252,16 +275,37 @@ export default function Home() {
         date: newEventDate,
         description: newEventDescription.trim() || null,
         createdById: activeMemberId || null,
+        assigneeId: newEventAssigneeId || null,
       }),
     });
     setNewEventTitle("");
     setNewEventDate("");
     setNewEventDescription("");
+    setNewEventAssigneeId("");
     loadAll();
   }
 
   async function removeEvent(id: string) {
     await fetch(`/api/events/${id}`, { method: "DELETE" });
+    loadAll();
+  }
+
+  async function reassignEvent(id: string, assigneeId: string) {
+    await fetch(`/api/events/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assigneeId: assigneeId || null }),
+    });
+    loadAll();
+  }
+
+  async function rescheduleEvent(id: string, date: string) {
+    if (!date) return;
+    await fetch(`/api/events/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date }),
+    });
     loadAll();
   }
 
@@ -396,6 +440,7 @@ export default function Home() {
         <div className="flex items-start justify-between gap-2">
           <span className="break-words font-medium leading-snug text-amber-800">
             📅 {event.title}
+            {hasTime(event.date) && ` · ${formatTime(event.date)}`}
           </span>
           <button
             onClick={() => removeEvent(event.id)}
@@ -408,6 +453,18 @@ export default function Home() {
         {event.description && (
           <p className="mt-1 text-xs text-amber-700">{event.description}</p>
         )}
+        {event.assignee && (
+          <span className="mt-1 block text-xs text-amber-600">
+            {event.assignee.name}
+          </span>
+        )}
+        <input
+          type="datetime-local"
+          value={toDateTimeLocalValue(event.date)}
+          onChange={(e) => rescheduleEvent(event.id, e.target.value)}
+          title="Verplaats naar een andere dag/tijd"
+          className="mt-1.5 w-full rounded border border-amber-200 bg-white px-1 py-0.5 text-xs text-amber-700"
+        />
       </div>
     );
   }
@@ -419,11 +476,28 @@ export default function Home() {
         className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-white p-4 shadow-sm"
       >
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{event.title}</span>
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
               {formatDate(event.date)}
+              {hasTime(event.date) && ` ${formatTime(event.date)}`}
             </span>
+            <select
+              value={event.assigneeId ?? ""}
+              onChange={(e) => reassignEvent(event.id, e.target.value)}
+              className="rounded-full border px-2 py-0.5 text-xs"
+              style={{
+                borderColor: event.assignee?.color ?? "#e2e8f0",
+                color: event.assignee?.color ?? "#64748b",
+              }}
+            >
+              <option value="">Iedereen</option>
+              {members.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
           </div>
           {event.description && (
             <p className="mt-0.5 text-xs text-slate-500">{event.description}</p>
@@ -662,11 +736,23 @@ export default function Home() {
                 className="min-w-[180px] flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
               />
               <input
-                type="date"
+                type="datetime-local"
                 value={newEventDate}
                 onChange={(e) => setNewEventDate(e.target.value)}
                 className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
               />
+              <select
+                value={newEventAssigneeId}
+                onChange={(e) => setNewEventAssigneeId(e.target.value)}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
+              >
+                <option value="">Iedereen</option>
+                {members.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
               <input
                 value={newEventDescription}
                 onChange={(e) => setNewEventDescription(e.target.value)}

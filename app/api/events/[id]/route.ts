@@ -7,14 +7,20 @@ export async function PATCH(
 ) {
   const { id } = await params;
   const body = await req.json();
-  const data: { title?: string; description?: string | null; date?: Date } = {};
+  const data: {
+    title?: string;
+    description?: string | null;
+    date?: Date;
+    assigneeId?: string | null;
+  } = {};
   if ("title" in body) data.title = (body.title ?? "").trim();
   if ("description" in body) data.description = (body.description ?? "").trim() || null;
   if ("date" in body) data.date = new Date(body.date);
+  if ("assigneeId" in body) data.assigneeId = (body.assigneeId ?? null) as string | null;
   const event = await prisma.event.update({
     where: { id },
     data,
-    include: { createdBy: true },
+    include: { createdBy: true, assignee: true },
   });
   return NextResponse.json(event);
 }

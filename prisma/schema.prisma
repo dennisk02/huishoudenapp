@@ -21,8 +21,9 @@ model Member {
   color         String   @default("#6366f1")
   createdAt     DateTime @default(now())
   completions   Completion[]
-  assignedTasks Task[]   @relation("TaskAssignee")
-  events        Event[]  @relation("EventCreatedBy")
+  assignedTasks  Task[]  @relation("TaskAssignee")
+  createdEvents  Event[] @relation("EventCreatedBy")
+  assignedEvents Event[] @relation("EventAssignee")
 }
 
 model Task {
@@ -54,4 +55,6 @@ model Event {
   createdAt   DateTime @default(now())
   createdById String?
   createdBy   Member?  @relation("EventCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  assigneeId  String?
+  assignee    Member?  @relation("EventAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
 }
