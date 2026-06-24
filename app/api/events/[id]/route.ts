@@ -11,16 +11,19 @@ export async function PATCH(
     title?: string;
     description?: string | null;
     date?: Date;
-    assigneeId?: string | null;
+    assignees?: { set: { id: string }[] };
   } = {};
   if ("title" in body) data.title = (body.title ?? "").trim();
   if ("description" in body) data.description = (body.description ?? "").trim() || null;
   if ("date" in body) data.date = new Date(body.date);
-  if ("assigneeId" in body) data.assigneeId = (body.assigneeId ?? null) as string | null;
+  if ("assigneeIds" in body) {
+    const assigneeIds = (body.assigneeIds ?? []) as string[];
+    data.assignees = { set: assigneeIds.map((aid) => ({ id: aid })) };
+  }
   const event = await prisma.event.update({
     where: { id },
     data,
-    include: { createdBy: true, assignee: true },
+    include: { createdBy: true, assignees: true },
   });
   return NextResponse.json(event);
 }

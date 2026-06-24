@@ -21,8 +21,7 @@ type Task = {
   frequency: Frequency;
   dueDate: string;
   completions: Completion[];
-  assigneeId: string | null;
-  assignee: Member | null;
+  assignees: Member[];
 };
 
 type Event = {
@@ -31,8 +30,7 @@ type Event = {
   description: string | null;
   date: string;
   createdBy: Member | null;
-  assigneeId: string | null;
-  assignee: Member | null;
+  assignees: Member[];
 };
 
 function startOfToday() {
@@ -99,6 +97,10 @@ function addDays(date: Date, n: number) {
   return d;
 }
 
+function toggleId(ids: string[], id: string): string[] {
+  return ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
+}
+
 const WEEKDAY_LABELS = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"];
 
 export default function Home() {
@@ -113,12 +115,12 @@ export default function Home() {
 
   const [newTaskName, setNewTaskName] = useState("");
   const [newTaskFrequency, setNewTaskFrequency] = useState<Frequency>("WEEKLY");
-  const [newTaskAssigneeId, setNewTaskAssigneeId] = useState<string>("");
+  const [newTaskAssigneeIds, setNewTaskAssigneeIds] = useState<string[]>([]);
   const [newMemberName, setNewMemberName] = useState("");
   const [newEventTitle, setNewEventTitle] = useState("");
   const [newEventDate, setNewEventDate] = useState("");
   const [newEventDescription, setNewEventDescription] = useState("");
-  const [newEventAssigneeId, setNewEventAssigneeId] = useState("");
+  const [newEventAssigneeIds, setNewEventAssigneeIds] = useState<string[]>([]);
 
   async function loadAll() {
     const [tasksRes, membersRes, eventsRes] = await Promise.all([
@@ -144,7 +146,7 @@ export default function Home() {
 
   const filteredTasks = useMemo(() => {
     if (!onlyMine || !activeMemberId) return tasks;
-    return tasks.filter((t) => t.assigneeId === activeMemberId);
+    return tasks.filter((t) => t.assignees.some((a) => a.id === activeMemberId));
   }, [tasks, onlyMine, activeMemberId]);
 
   const sortedTasks = useMemo(
@@ -232,11 +234,11 @@ export default function Home() {
       body: JSON.stringify({
         name: newTaskName.trim(),
         frequency: newTaskFrequency,
-        assigneeId: newTaskAssigneeId || null,
+        assigneeIds: newTaskAssigneeIds,
       }),
     });
     setNewTaskName("");
-    setNewTaskAssigneeId("");
+    setNewTaskAssigneeIds([]);
     loadAll();
   }
 
@@ -245,11 +247,12 @@ export default function Home() {
     loadAll();
   }
 
-  async function reassignTask(id: string, assigneeId: string) {
-    await fetch(`/api/tasks/${id}`, {
+  async function toggleTaskAssignee(task: Task, memberId: string) {
+    const next = toggleId(task.assignees.map((a) => a.id), memberId);
+    await fetch(`/api/tasks/${task.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ assigneeId: assigneeId || null }),
+      body: JSON.stringify({ assigneeIds: next }),
     });
     loadAll();
   }
@@ -275,13 +278,13 @@ export default function Home() {
         date: newEventDate,
         description: newEventDescription.trim() || null,
         createdById: activeMemberId || null,
-        assigneeId: newEventAssigneeId || null,
+        assigneeIds: newEventAssigneeIds,
       }),
     });
     setNewEventTitle("");
     setNewEventDate("");
     setNewEventDescription("");
-    setNewEventAssigneeId("");
+    setNewEventAssigneeIds([]);
     loadAll();
   }
 
@@ -290,11 +293,12 @@ export default function Home() {
     loadAll();
   }
 
-  async function reassignEvent(id: string, assigneeId: string) {
-    await fetch(`/api/events/${id}`, {
+  async function toggleEventAssignee(event: Event, memberId: string) {
+    const next = toggleId(event.assignees.map((a) => a.id), memberId);
+    await fetch(`/api/events/${event.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ assigneeId: assigneeId || null }),
+      body: JSON.stringify({ assigneeIds: next }),
     });
     loadAll();
   }
@@ -322,6 +326,37 @@ export default function Home() {
     loadAll();
   }
 
+  function renderAssigneePicker(
+    selectedIds: string[],
+    onToggle: (memberId: string) => void
+  ) {
+    return (
+      <div className="flex flex-wrap gap-1">
+        {members.map((m) => {
+          const selected = selectedIds.includes(m.id);
+          return (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => onToggle(m.id)}
+              className="rounded-full border px-2 py-0.5 text-xs font-medium transition"
+              style={{
+                backgroundColor: selected ? m.color : "white",
+                borderColor: m.color,
+                color: selected ? "white" : m.color,
+              }}
+            >
+              {m.name}
+            </button>
+          );
+        })}
+        {members.length === 0 && (
+          <span className="text-xs text-slate-400">Voeg eerst gezinsleden toe</span>
+        )}
+      </div>
+    );
+  }
+
   function renderTaskCard(task: Task) {
     const overdue = isOverdue(task);
     const dueToday = isDueToday(task);
@@ -339,25 +374,15 @@ export default function Home() {
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
               {FREQUENCY_LABELS[task.frequency]}
             </span>
-            <select
-              value={task.assigneeId ?? ""}
-              onChange={(e) => reassignTask(task.id, e.target.value)}
-              className="rounded-full border px-2 py-0.5 text-xs"
-              style={{
-                borderColor: task.assignee?.color ?? "#e2e8f0",
-                color: task.assignee?.color ?? "#64748b",
-              }}
-            >
-              <option value="">Iedereen</option>
-              {members.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
+          </div>
+          <div className="mt-1.5">
+            {renderAssigneePicker(
+              task.assignees.map((a) => a.id),
+              (memberId) => toggleTaskAssignee(task, memberId)
+            )}
           </div>
           <p
-            className={`mt-0.5 text-xs ${
+            className={`mt-1.5 text-xs ${
               overdue
                 ? "font-semibold text-red-600"
                 : dueToday
@@ -418,7 +443,8 @@ export default function Home() {
         </div>
         <span className="mt-1 block text-xs text-slate-400">
           {FREQUENCY_LABELS[task.frequency]}
-          {task.assignee && ` · ${task.assignee.name}`}
+          {task.assignees.length > 0 &&
+            ` · ${task.assignees.map((a) => a.name).join(", ")}`}
         </span>
         <input
           type="date"
@@ -453,9 +479,9 @@ export default function Home() {
         {event.description && (
           <p className="mt-1 text-xs text-amber-700">{event.description}</p>
         )}
-        {event.assignee && (
+        {event.assignees.length > 0 && (
           <span className="mt-1 block text-xs text-amber-600">
-            {event.assignee.name}
+            {event.assignees.map((a) => a.name).join(", ")}
           </span>
         )}
         <input
@@ -482,25 +508,15 @@ export default function Home() {
               {formatDate(event.date)}
               {hasTime(event.date) && ` ${formatTime(event.date)}`}
             </span>
-            <select
-              value={event.assigneeId ?? ""}
-              onChange={(e) => reassignEvent(event.id, e.target.value)}
-              className="rounded-full border px-2 py-0.5 text-xs"
-              style={{
-                borderColor: event.assignee?.color ?? "#e2e8f0",
-                color: event.assignee?.color ?? "#64748b",
-              }}
-            >
-              <option value="">Iedereen</option>
-              {members.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
+          </div>
+          <div className="mt-1.5">
+            {renderAssigneePicker(
+              event.assignees.map((a) => a.id),
+              (memberId) => toggleEventAssignee(event, memberId)
+            )}
           </div>
           {event.description && (
-            <p className="mt-0.5 text-xs text-slate-500">{event.description}</p>
+            <p className="mt-1.5 text-xs text-slate-500">{event.description}</p>
           )}
           {event.createdBy && (
             <p className="mt-0.5 text-xs text-slate-400">
@@ -572,42 +588,40 @@ export default function Home() {
 
       <section className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="mb-3 text-sm font-semibold text-slate-600">Nieuwe taak</h2>
-        <form onSubmit={addTask} className="flex flex-wrap gap-2">
-          <input
-            value={newTaskName}
-            onChange={(e) => setNewTaskName(e.target.value)}
-            placeholder="Bijv. Stofzuigen, Vuilnis buiten zetten..."
-            className="min-w-[180px] flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
-          />
-          <select
-            value={newTaskFrequency}
-            onChange={(e) => setNewTaskFrequency(e.target.value as Frequency)}
-            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
-          >
-            {Object.entries(FREQUENCY_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <select
-            value={newTaskAssigneeId}
-            onChange={(e) => setNewTaskAssigneeId(e.target.value)}
-            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
-          >
-            <option value="">Iedereen</option>
-            {members.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="submit"
-            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500"
-          >
-            Taak toevoegen
-          </button>
+        <form onSubmit={addTask} className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            <input
+              value={newTaskName}
+              onChange={(e) => setNewTaskName(e.target.value)}
+              placeholder="Bijv. Stofzuigen, Vuilnis buiten zetten..."
+              className="min-w-[180px] flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
+            />
+            <select
+              value={newTaskFrequency}
+              onChange={(e) => setNewTaskFrequency(e.target.value as Frequency)}
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
+            >
+              {Object.entries(FREQUENCY_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500"
+            >
+              Taak toevoegen
+            </button>
+          </div>
+          <div>
+            <p className="mb-1 text-xs text-slate-500">
+              Toewijzen aan (leeg = iedereen):
+            </p>
+            {renderAssigneePicker(newTaskAssigneeIds, (memberId) =>
+              setNewTaskAssigneeIds(toggleId(newTaskAssigneeIds, memberId))
+            )}
+          </div>
         </form>
       </section>
 
@@ -728,43 +742,41 @@ export default function Home() {
             <h2 className="mb-3 text-sm font-semibold text-slate-600">
               Nieuwe activiteit
             </h2>
-            <form onSubmit={addEvent} className="flex flex-wrap gap-2">
-              <input
-                value={newEventTitle}
-                onChange={(e) => setNewEventTitle(e.target.value)}
-                placeholder="Bijv. Verjaardag oma, Tandarts..."
-                className="min-w-[180px] flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
-              />
-              <input
-                type="datetime-local"
-                value={newEventDate}
-                onChange={(e) => setNewEventDate(e.target.value)}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
-              />
-              <select
-                value={newEventAssigneeId}
-                onChange={(e) => setNewEventAssigneeId(e.target.value)}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
-              >
-                <option value="">Iedereen</option>
-                {members.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-              <input
-                value={newEventDescription}
-                onChange={(e) => setNewEventDescription(e.target.value)}
-                placeholder="Toelichting (optioneel)"
-                className="min-w-[180px] flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
-              />
-              <button
-                type="submit"
-                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500"
-              >
-                Toevoegen
-              </button>
+            <form onSubmit={addEvent} className="space-y-2">
+              <div className="flex flex-wrap gap-2">
+                <input
+                  value={newEventTitle}
+                  onChange={(e) => setNewEventTitle(e.target.value)}
+                  placeholder="Bijv. Verjaardag oma, Tandarts..."
+                  className="min-w-[180px] flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
+                />
+                <input
+                  type="datetime-local"
+                  value={newEventDate}
+                  onChange={(e) => setNewEventDate(e.target.value)}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
+                />
+                <input
+                  value={newEventDescription}
+                  onChange={(e) => setNewEventDescription(e.target.value)}
+                  placeholder="Toelichting (optioneel)"
+                  className="min-w-[180px] flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
+                />
+                <button
+                  type="submit"
+                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500"
+                >
+                  Toevoegen
+                </button>
+              </div>
+              <div>
+                <p className="mb-1 text-xs text-slate-500">
+                  Toewijzen aan (leeg = iedereen):
+                </p>
+                {renderAssigneePicker(newEventAssigneeIds, (memberId) =>
+                  setNewEventAssigneeIds(toggleId(newEventAssigneeIds, memberId))
+                )}
+              </div>
             </form>
           </div>
 

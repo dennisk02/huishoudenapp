@@ -35,7 +35,7 @@ export async function POST(
     return tx.task.update({
       where: { id: task.id },
       data: { dueDate: newDue },
-      include: { assignee: true },
+      include: { assignees: true },
     });
   });
 

@@ -7,9 +7,10 @@ export async function PATCH(
 ) {
   const { id } = await params;
   const body = await req.json();
-  const data: { assigneeId?: string | null; dueDate?: Date } = {};
-  if ("assigneeId" in body) {
-    data.assigneeId = (body.assigneeId ?? null) as string | null;
+  const data: { dueDate?: Date; assignees?: { set: { id: string }[] } } = {};
+  if ("assigneeIds" in body) {
+    const assigneeIds = (body.assigneeIds ?? []) as string[];
+    data.assignees = { set: assigneeIds.map((aid) => ({ id: aid })) };
   }
   if ("dueDate" in body) {
     data.dueDate = new Date(body.dueDate);
@@ -17,7 +18,7 @@ export async function PATCH(
   const task = await prisma.task.update({
     where: { id },
     data,
-    include: { assignee: true },
+    include: { assignees: true },
   });
   return NextResponse.json(task);
 }

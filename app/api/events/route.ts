@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 export async function GET() {
   const events = await prisma.event.findMany({
     orderBy: { date: "asc" },
-    include: { createdBy: true, assignee: true },
+    include: { createdBy: true, assignees: true },
   });
   return NextResponse.json(events);
 }
@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   const description = (body.description ?? "").trim() || null;
   const date = body.date as string | undefined;
   const createdById = (body.createdById ?? null) as string | null;
-  const assigneeId = (body.assigneeId ?? null) as string | null;
+  const assigneeIds = (body.assigneeIds ?? []) as string[];
   if (!title) {
     return NextResponse.json({ error: "Titel is verplicht" }, { status: 400 });
   }
@@ -23,8 +23,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Datum is verplicht" }, { status: 400 });
   }
   const event = await prisma.event.create({
-    data: { title, description, date: new Date(date), createdById, assigneeId },
-    include: { createdBy: true, assignee: true },
+    data: {
+      title,
+      description,
+      date: new Date(date),
+      createdById,
+      assignees: { connect: assigneeIds.map((id) => ({ id })) },
+    },
+    include: { createdBy: true, assignees: true },
   });
   return NextResponse.json(event);
 }
