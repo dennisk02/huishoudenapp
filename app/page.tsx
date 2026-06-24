@@ -25,6 +25,14 @@ type Task = {
   assignee: Member | null;
 };
 
+type Event = {
+  id: string;
+  title: string;
+  description: string | null;
+  date: string;
+  createdBy: Member | null;
+};
+
 function startOfToday() {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -74,9 +82,10 @@ const WEEKDAY_LABELS = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"];
 export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [activeMemberId, setActiveMemberId] = useState<string>("");
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<"list" | "week">("list");
+  const [view, setView] = useState<"list" | "week" | "agenda">("list");
   const [weekOffset, setWeekOffset] = useState(0);
   const [onlyMine, setOnlyMine] = useState(false);
 
@@ -84,14 +93,19 @@ export default function Home() {
   const [newTaskFrequency, setNewTaskFrequency] = useState<Frequency>("WEEKLY");
   const [newTaskAssigneeId, setNewTaskAssigneeId] = useState<string>("");
   const [newMemberName, setNewMemberName] = useState("");
+  const [newEventTitle, setNewEventTitle] = useState("");
+  const [newEventDate, setNewEventDate] = useState("");
+  const [newEventDescription, setNewEventDescription] = useState("");
 
   async function loadAll() {
-    const [tasksRes, membersRes] = await Promise.all([
+    const [tasksRes, membersRes, eventsRes] = await Promise.all([
       fetch("/api/tasks"),
       fetch("/api/members"),
+      fetch("/api/events"),
     ]);
     setTasks(await tasksRes.json());
     setMembers(await membersRes.json());
+    setEvents(await eventsRes.json());
     setLoading(false);
   }
 
@@ -142,6 +156,31 @@ export default function Home() {
     });
     return map;
   }, [sortedTasks, weekDays]);
+
+  const sortedEvents = useMemo(
+    () =>
+      [...events].sort(
+        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+      ),
+    [events]
+  );
+
+  const upcomingEvents = useMemo(
+    () => sortedEvents.filter((e) => new Date(e.date) >= startOfToday()),
+    [sortedEvents]
+  );
+
+  const eventsByDay = useMemo(() => {
+    const map = new Map<number, Event[]>();
+    weekDays.forEach((d) => map.set(d.getTime(), []));
+    sortedEvents.forEach((e) => {
+      const key = startOfDayOf(new Date(e.date)).getTime();
+      if (map.has(key)) {
+        map.get(key)!.push(e);
+      }
+    });
+    return map;
+  }, [sortedEvents, weekDays]);
 
   async function addMember(e: React.FormEvent) {
     e.preventDefault();
@@ -199,6 +238,30 @@ export default function Home() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ dueDate }),
     });
+    loadAll();
+  }
+
+  async function addEvent(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newEventTitle.trim() || !newEventDate) return;
+    await fetch("/api/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: newEventTitle.trim(),
+        date: newEventDate,
+        description: newEventDescription.trim() || null,
+        createdById: activeMemberId || null,
+      }),
+    });
+    setNewEventTitle("");
+    setNewEventDate("");
+    setNewEventDescription("");
+    loadAll();
+  }
+
+  async function removeEvent(id: string) {
+    await fetch(`/api/events/${id}`, { method: "DELETE" });
     loadAll();
   }
 
@@ -324,6 +387,63 @@ export default function Home() {
     );
   }
 
+  function renderCompactEvent(event: Event) {
+    return (
+      <div
+        key={event.id}
+        className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-sm shadow-sm"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <span className="break-words font-medium leading-snug text-amber-800">
+            📅 {event.title}
+          </span>
+          <button
+            onClick={() => removeEvent(event.id)}
+            title="Verwijderen"
+            className="shrink-0 text-xs text-amber-500 hover:text-amber-700"
+          >
+            ✕
+          </button>
+        </div>
+        {event.description && (
+          <p className="mt-1 text-xs text-amber-700">{event.description}</p>
+        )}
+      </div>
+    );
+  }
+
+  function renderEventRow(event: Event) {
+    return (
+      <div
+        key={event.id}
+        className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-white p-4 shadow-sm"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{event.title}</span>
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+              {formatDate(event.date)}
+            </span>
+          </div>
+          {event.description && (
+            <p className="mt-0.5 text-xs text-slate-500">{event.description}</p>
+          )}
+          {event.createdBy && (
+            <p className="mt-0.5 text-xs text-slate-400">
+              Toegevoegd door {event.createdBy.name}
+            </p>
+          )}
+        </div>
+        <button
+          onClick={() => removeEvent(event.id)}
+          className="rounded-lg px-2 py-1.5 text-sm text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+        >
+          ✕
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 lg:max-w-6xl">
       <header className="mb-6">
@@ -435,6 +555,14 @@ export default function Home() {
           >
             Week
           </button>
+          <button
+            onClick={() => setView("agenda")}
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+              view === "agenda" ? "bg-slate-800 text-white" : "bg-white text-slate-500 border border-slate-200"
+            }`}
+          >
+            Agenda
+          </button>
         </div>
         <button
           onClick={() => setOnlyMine((v) => !v)}
@@ -507,14 +635,60 @@ export default function Home() {
                     {WEEKDAY_LABELS[i]} {day.getDate()}/{day.getMonth() + 1}
                   </p>
                   <div className="space-y-2">
-                    {dayTasks.length === 0 && (
+                    {dayTasks.length === 0 && (eventsByDay.get(day.getTime()) ?? []).length === 0 && (
                       <p className="text-xs text-slate-300">–</p>
                     )}
+                    {(eventsByDay.get(day.getTime()) ?? []).map(renderCompactEvent)}
                     {dayTasks.map(renderCompactTask)}
                   </div>
                 </div>
               );
             })}
+          </div>
+        </section>
+      )}
+
+      {!loading && view === "agenda" && (
+        <section>
+          <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h2 className="mb-3 text-sm font-semibold text-slate-600">
+              Nieuwe activiteit
+            </h2>
+            <form onSubmit={addEvent} className="flex flex-wrap gap-2">
+              <input
+                value={newEventTitle}
+                onChange={(e) => setNewEventTitle(e.target.value)}
+                placeholder="Bijv. Verjaardag oma, Tandarts..."
+                className="min-w-[180px] flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
+              />
+              <input
+                type="date"
+                value={newEventDate}
+                onChange={(e) => setNewEventDate(e.target.value)}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
+              />
+              <input
+                value={newEventDescription}
+                onChange={(e) => setNewEventDescription(e.target.value)}
+                placeholder="Toelichting (optioneel)"
+                className="min-w-[180px] flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
+              />
+              <button
+                type="submit"
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500"
+              >
+                Toevoegen
+              </button>
+            </form>
+          </div>
+
+          <div className="space-y-3">
+            {upcomingEvents.length === 0 && (
+              <p className="text-sm text-slate-400">
+                Nog geen activiteiten gepland.
+              </p>
+            )}
+            {upcomingEvents.map(renderEventRow)}
           </div>
         </section>
       )}

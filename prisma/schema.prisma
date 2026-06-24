@@ -22,6 +22,7 @@ model Member {
   createdAt     DateTime @default(now())
   completions   Completion[]
   assignedTasks Task[]   @relation("TaskAssignee")
+  events        Event[]  @relation("EventCreatedBy")
 }
 
 model Task {
@@ -43,4 +44,14 @@ model Completion {
   member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
   dueDate     DateTime
   completedAt DateTime @default(now())
+}
+
+model Event {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  date        DateTime
+  createdAt   DateTime @default(now())
+  createdById String?
+  createdBy   Member?  @relation("EventCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 }

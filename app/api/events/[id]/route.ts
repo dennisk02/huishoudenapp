@@ -1,0 +1,29 @@
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const body = await req.json();
+  const data: { title?: string; description?: string | null; date?: Date } = {};
+  if ("title" in body) data.title = (body.title ?? "").trim();
+  if ("description" in body) data.description = (body.description ?? "").trim() || null;
+  if ("date" in body) data.date = new Date(body.date);
+  const event = await prisma.event.update({
+    where: { id },
+    data,
+    include: { createdBy: true },
+  });
+  return NextResponse.json(event);
+}
+
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  await prisma.event.delete({ where: { id } });
+  return NextResponse.json({ ok: true });
+}
