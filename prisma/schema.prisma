@@ -1,0 +1,43 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+enum Frequency {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
+
+model Member {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  color       String   @default("#6366f1")
+  createdAt   DateTime @default(now())
+  completions Completion[]
+}
+
+model Task {
+  id          String    @id @default(cuid())
+  name        String
+  frequency   Frequency @default(WEEKLY)
+  dueDate     DateTime
+  createdAt   DateTime  @default(now())
+  completions Completion[]
+}
+
+model Completion {
+  id          String   @id @default(cuid())
+  taskId      String
+  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  memberId    String
+  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  dueDate     DateTime
+  completedAt DateTime @default(now())
+}
