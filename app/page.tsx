@@ -341,6 +341,15 @@ export default function Home() {
     loadAll();
   }
 
+  async function setEventEndDate(id: string, endDate: string) {
+    await fetch(`/api/events/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endDate: endDate || null }),
+    });
+    loadAll();
+  }
+
   async function completeTask(id: string) {
     if (!activeMemberId) {
       alert("Kies eerst wie de taak heeft afgerond.");
@@ -577,6 +586,28 @@ export default function Home() {
               Toegevoegd door {event.createdBy.name}
             </p>
           )}
+          <div className="mt-2 flex flex-wrap items-end gap-2">
+            <div className="flex flex-col gap-0.5">
+              <label className="text-[10px] text-slate-400">Start</label>
+              <input
+                type="datetime-local"
+                value={toDateTimeLocalValue(event.date)}
+                onChange={(e) => rescheduleEvent(event.id, e.target.value)}
+                className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600"
+              />
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <label className="text-[10px] text-slate-400">
+                Tot en met (meerdaags)
+              </label>
+              <input
+                type="date"
+                value={event.endDate ? event.endDate.slice(0, 10) : ""}
+                onChange={(e) => setEventEndDate(event.id, e.target.value)}
+                className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600"
+              />
+            </div>
+          </div>
         </div>
         <button
           onClick={() => removeEvent(event.id)}
