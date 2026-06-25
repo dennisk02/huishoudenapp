@@ -47,12 +47,13 @@ model Completion {
 }
 
 model Event {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   title       String
   description String?
   date        DateTime
-  createdAt   DateTime @default(now())
+  endDate     DateTime?
+  createdAt   DateTime  @default(now())
   createdById String?
-  createdBy   Member?  @relation("EventCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  assignees   Member[] @relation("EventAssignees")
+  createdBy   Member?   @relation("EventCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  assignees   Member[]  @relation("EventAssignees")
 }

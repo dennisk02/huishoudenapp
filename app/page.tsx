@@ -29,6 +29,7 @@ type Event = {
   title: string;
   description: string | null;
   date: string;
+  endDate: string | null;
   createdBy: Member | null;
   assignees: Member[];
 };
@@ -101,6 +102,24 @@ function toggleId(ids: string[], id: string): string[] {
   return ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
 }
 
+function isMultiDay(event: { date: string; endDate: string | null }) {
+  if (!event.endDate) return false;
+  const d = new Date(event.date);
+  d.setHours(0, 0, 0, 0);
+  const e = new Date(event.endDate);
+  e.setHours(0, 0, 0, 0);
+  return e.getTime() !== d.getTime();
+}
+
+function formatEventDateRange(event: { date: string; endDate: string | null }) {
+  if (!isMultiDay(event)) {
+    return (
+      formatDate(event.date) + (hasTime(event.date) ? ` ${formatTime(event.date)}` : "")
+    );
+  }
+  return `${formatDate(event.date)} – ${formatDate(event.endDate as string)}`;
+}
+
 const WEEKDAY_LABELS = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"];
 
 export default function Home() {
@@ -119,6 +138,7 @@ export default function Home() {
   const [newMemberName, setNewMemberName] = useState("");
   const [newEventTitle, setNewEventTitle] = useState("");
   const [newEventDate, setNewEventDate] = useState("");
+  const [newEventEndDate, setNewEventEndDate] = useState("");
   const [newEventDescription, setNewEventDescription] = useState("");
   const [newEventAssigneeIds, setNewEventAssigneeIds] = useState<string[]>([]);
 
@@ -191,7 +211,10 @@ export default function Home() {
   );
 
   const upcomingEvents = useMemo(
-    () => sortedEvents.filter((e) => new Date(e.date) >= startOfToday()),
+    () =>
+      sortedEvents.filter(
+        (e) => new Date(e.endDate ?? e.date) >= startOfToday()
+      ),
     [sortedEvents]
   );
 
@@ -199,10 +222,13 @@ export default function Home() {
     const map = new Map<number, Event[]>();
     weekDays.forEach((d) => map.set(d.getTime(), []));
     sortedEvents.forEach((e) => {
-      const key = startOfDayOf(new Date(e.date)).getTime();
-      if (map.has(key)) {
-        map.get(key)!.push(e);
-      }
+      const start = startOfDayOf(new Date(e.date));
+      const end = startOfDayOf(new Date(e.endDate ?? e.date));
+      weekDays.forEach((day) => {
+        if (day.getTime() >= start.getTime() && day.getTime() <= end.getTime()) {
+          map.get(day.getTime())!.push(e);
+        }
+      });
     });
     return map;
   }, [sortedEvents, weekDays]);
@@ -276,6 +302,7 @@ export default function Home() {
       body: JSON.stringify({
         title: newEventTitle.trim(),
         date: newEventDate,
+        endDate: newEventEndDate || null,
         description: newEventDescription.trim() || null,
         createdById: activeMemberId || null,
         assigneeIds: newEventAssigneeIds,
@@ -283,6 +310,7 @@ export default function Home() {
     });
     setNewEventTitle("");
     setNewEventDate("");
+    setNewEventEndDate("");
     setNewEventDescription("");
     setNewEventAssigneeIds([]);
     loadAll();
@@ -331,7 +359,7 @@ export default function Home() {
     onToggle: (memberId: string) => void
   ) {
     return (
-      <div className="flex flex-wrap gap-1">
+      <div className="flex flex-wrap gap-1.5">
         {members.map((m) => {
           const selected = selectedIds.includes(m.id);
           return (
@@ -339,13 +367,19 @@ export default function Home() {
               key={m.id}
               type="button"
               onClick={() => onToggle(m.id)}
-              className="rounded-full border px-2 py-0.5 text-xs font-medium transition"
+              className={`flex items-center gap-1.5 rounded-full border-2 px-2.5 py-1 text-xs font-semibold transition ${
+                selected ? "shadow-sm" : "bg-white"
+              }`}
               style={{
                 backgroundColor: selected ? m.color : "white",
                 borderColor: m.color,
-                color: selected ? "white" : m.color,
+                color: selected ? "white" : "#334155",
               }}
             >
+              <span
+                className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                style={{ backgroundColor: selected ? "white" : m.color }}
+              />
               {m.name}
             </button>
           );
@@ -353,6 +387,23 @@ export default function Home() {
         {members.length === 0 && (
           <span className="text-xs text-slate-400">Voeg eerst gezinsleden toe</span>
         )}
+      </div>
+    );
+  }
+
+  function renderAssigneeBadges(assignees: Member[]) {
+    if (assignees.length === 0) return null;
+    return (
+      <div className="flex flex-wrap gap-1">
+        {assignees.map((m) => (
+          <span
+            key={m.id}
+            className="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold text-white"
+            style={{ backgroundColor: m.color }}
+          >
+            {m.name}
+          </span>
+        ))}
       </div>
     );
   }
@@ -443,9 +494,10 @@ export default function Home() {
         </div>
         <span className="mt-1 block text-xs text-slate-400">
           {FREQUENCY_LABELS[task.frequency]}
-          {task.assignees.length > 0 &&
-            ` · ${task.assignees.map((a) => a.name).join(", ")}`}
         </span>
+        {task.assignees.length > 0 && (
+          <div className="mt-1">{renderAssigneeBadges(task.assignees)}</div>
+        )}
         <input
           type="date"
           value={dateValue}
@@ -466,7 +518,12 @@ export default function Home() {
         <div className="flex items-start justify-between gap-2">
           <span className="break-words font-medium leading-snug text-amber-800">
             📅 {event.title}
-            {hasTime(event.date) && ` · ${formatTime(event.date)}`}
+            {isMultiDay(event) && (
+              <span className="ml-1 rounded-full bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                meerdaags
+              </span>
+            )}
+            {!isMultiDay(event) && hasTime(event.date) && ` · ${formatTime(event.date)}`}
           </span>
           <button
             onClick={() => removeEvent(event.id)}
@@ -480,15 +537,13 @@ export default function Home() {
           <p className="mt-1 text-xs text-amber-700">{event.description}</p>
         )}
         {event.assignees.length > 0 && (
-          <span className="mt-1 block text-xs text-amber-600">
-            {event.assignees.map((a) => a.name).join(", ")}
-          </span>
+          <div className="mt-1">{renderAssigneeBadges(event.assignees)}</div>
         )}
         <input
           type="datetime-local"
           value={toDateTimeLocalValue(event.date)}
           onChange={(e) => rescheduleEvent(event.id, e.target.value)}
-          title="Verplaats naar een andere dag/tijd"
+          title="Verplaats startdatum/tijd"
           className="mt-1.5 w-full rounded border border-amber-200 bg-white px-1 py-0.5 text-xs text-amber-700"
         />
       </div>
@@ -505,8 +560,7 @@ export default function Home() {
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{event.title}</span>
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
-              {formatDate(event.date)}
-              {hasTime(event.date) && ` ${formatTime(event.date)}`}
+              {formatEventDateRange(event)}
             </span>
           </div>
           <div className="mt-1.5">
@@ -750,12 +804,26 @@ export default function Home() {
                   placeholder="Bijv. Verjaardag oma, Tandarts..."
                   className="min-w-[180px] flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
                 />
-                <input
-                  type="datetime-local"
-                  value={newEventDate}
-                  onChange={(e) => setNewEventDate(e.target.value)}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
-                />
+                <div className="flex flex-col gap-0.5">
+                  <label className="text-[10px] text-slate-400">Start</label>
+                  <input
+                    type="datetime-local"
+                    value={newEventDate}
+                    onChange={(e) => setNewEventDate(e.target.value)}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
+                  />
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <label className="text-[10px] text-slate-400">
+                    Tot en met (optioneel, voor meerdaagse activiteiten)
+                  </label>
+                  <input
+                    type="date"
+                    value={newEventEndDate}
+                    onChange={(e) => setNewEventEndDate(e.target.value)}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
+                  />
+                </div>
                 <input
                   value={newEventDescription}
                   onChange={(e) => setNewEventDescription(e.target.value)}

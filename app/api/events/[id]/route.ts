@@ -11,11 +11,13 @@ export async function PATCH(
     title?: string;
     description?: string | null;
     date?: Date;
+    endDate?: Date | null;
     assignees?: { set: { id: string }[] };
   } = {};
   if ("title" in body) data.title = (body.title ?? "").trim();
   if ("description" in body) data.description = (body.description ?? "").trim() || null;
   if ("date" in body) data.date = new Date(body.date);
+  if ("endDate" in body) data.endDate = body.endDate ? new Date(body.endDate) : null;
   if ("assigneeIds" in body) {
     const assigneeIds = (body.assigneeIds ?? []) as string[];
     data.assignees = { set: assigneeIds.map((aid) => ({ id: aid })) };
