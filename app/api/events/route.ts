@@ -14,7 +14,6 @@ export async function POST(req: Request) {
   const title = (body.title ?? "").trim();
   const description = (body.description ?? "").trim() || null;
   const date = body.date as string | undefined;
-  const endDate = body.endDate as string | undefined;
   const createdById = (body.createdById ?? null) as string | null;
   const assigneeIds = (body.assigneeIds ?? []) as string[];
   if (!title) {
@@ -28,7 +27,6 @@ export async function POST(req: Request) {
       title,
       description,
       date: new Date(date),
-      endDate: endDate ? new Date(endDate) : null,
       createdById,
       assignees: { connect: assigneeIds.map((id) => ({ id })) },
     },

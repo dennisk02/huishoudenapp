@@ -29,7 +29,6 @@ type Event = {
   title: string;
   description: string | null;
   date: string;
-  endDate: string | null;
   createdBy: Member | null;
   assignees: Member[];
 };
@@ -102,24 +101,6 @@ function toggleId(ids: string[], id: string): string[] {
   return ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
 }
 
-function isMultiDay(event: { date: string; endDate: string | null }) {
-  if (!event.endDate) return false;
-  const d = new Date(event.date);
-  d.setHours(0, 0, 0, 0);
-  const e = new Date(event.endDate);
-  e.setHours(0, 0, 0, 0);
-  return e.getTime() !== d.getTime();
-}
-
-function formatEventDateRange(event: { date: string; endDate: string | null }) {
-  if (!isMultiDay(event)) {
-    return (
-      formatDate(event.date) + (hasTime(event.date) ? ` ${formatTime(event.date)}` : "")
-    );
-  }
-  return `${formatDate(event.date)} – ${formatDate(event.endDate as string)}`;
-}
-
 const WEEKDAY_LABELS = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"];
 
 export default function Home() {
@@ -138,7 +119,6 @@ export default function Home() {
   const [newMemberName, setNewMemberName] = useState("");
   const [newEventTitle, setNewEventTitle] = useState("");
   const [newEventDate, setNewEventDate] = useState("");
-  const [newEventEndDate, setNewEventEndDate] = useState("");
   const [newEventDescription, setNewEventDescription] = useState("");
   const [newEventAssigneeIds, setNewEventAssigneeIds] = useState<string[]>([]);
 
@@ -211,10 +191,7 @@ export default function Home() {
   );
 
   const upcomingEvents = useMemo(
-    () =>
-      sortedEvents.filter(
-        (e) => new Date(e.endDate ?? e.date) >= startOfToday()
-      ),
+    () => sortedEvents.filter((e) => new Date(e.date) >= startOfToday()),
     [sortedEvents]
   );
 
@@ -222,13 +199,10 @@ export default function Home() {
     const map = new Map<number, Event[]>();
     weekDays.forEach((d) => map.set(d.getTime(), []));
     sortedEvents.forEach((e) => {
-      const start = startOfDayOf(new Date(e.date));
-      const end = startOfDayOf(new Date(e.endDate ?? e.date));
-      weekDays.forEach((day) => {
-        if (day.getTime() >= start.getTime() && day.getTime() <= end.getTime()) {
-          map.get(day.getTime())!.push(e);
-        }
-      });
+      const key = startOfDayOf(new Date(e.date)).getTime();
+      if (map.has(key)) {
+        map.get(key)!.push(e);
+      }
     });
     return map;
   }, [sortedEvents, weekDays]);
@@ -302,7 +276,6 @@ export default function Home() {
       body: JSON.stringify({
         title: newEventTitle.trim(),
         date: newEventDate,
-        endDate: newEventEndDate || null,
         description: newEventDescription.trim() || null,
         createdById: activeMemberId || null,
         assigneeIds: newEventAssigneeIds,
@@ -310,7 +283,6 @@ export default function Home() {
     });
     setNewEventTitle("");
     setNewEventDate("");
-    setNewEventEndDate("");
     setNewEventDescription("");
     setNewEventAssigneeIds([]);
     loadAll();
@@ -337,15 +309,6 @@ export default function Home() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ date }),
-    });
-    loadAll();
-  }
-
-  async function setEventEndDate(id: string, endDate: string) {
-    await fetch(`/api/events/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endDate: endDate || null }),
     });
     loadAll();
   }
@@ -527,12 +490,7 @@ export default function Home() {
         <div className="flex items-start justify-between gap-2">
           <span className="break-words font-medium leading-snug text-amber-800">
             📅 {event.title}
-            {isMultiDay(event) && (
-              <span className="ml-1 rounded-full bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
-                meerdaags
-              </span>
-            )}
-            {!isMultiDay(event) && hasTime(event.date) && ` · ${formatTime(event.date)}`}
+            {hasTime(event.date) && ` · ${formatTime(event.date)}`}
           </span>
           <button
             onClick={() => removeEvent(event.id)}
@@ -552,7 +510,7 @@ export default function Home() {
           type="datetime-local"
           value={toDateTimeLocalValue(event.date)}
           onChange={(e) => rescheduleEvent(event.id, e.target.value)}
-          title="Verplaats startdatum/tijd"
+          title="Verplaats naar een andere dag/tijd"
           className="mt-1.5 w-full rounded border border-amber-200 bg-white px-1 py-0.5 text-xs text-amber-700"
         />
       </div>
@@ -569,7 +527,8 @@ export default function Home() {
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{event.title}</span>
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
-              {formatEventDateRange(event)}
+              {formatDate(event.date)}
+              {hasTime(event.date) && ` ${formatTime(event.date)}`}
             </span>
           </div>
           <div className="mt-1.5">
@@ -586,27 +545,14 @@ export default function Home() {
               Toegevoegd door {event.createdBy.name}
             </p>
           )}
-          <div className="mt-2 flex flex-wrap items-end gap-2">
-            <div className="flex flex-col gap-0.5">
-              <label className="text-[10px] text-slate-400">Start</label>
-              <input
-                type="datetime-local"
-                value={toDateTimeLocalValue(event.date)}
-                onChange={(e) => rescheduleEvent(event.id, e.target.value)}
-                className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600"
-              />
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <label className="text-[10px] text-slate-400">
-                Tot en met (meerdaags)
-              </label>
-              <input
-                type="date"
-                value={event.endDate ? event.endDate.slice(0, 10) : ""}
-                onChange={(e) => setEventEndDate(event.id, e.target.value)}
-                className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600"
-              />
-            </div>
+          <div className="mt-2 flex flex-col gap-0.5">
+            <label className="text-[10px] text-slate-400">Datum en tijd</label>
+            <input
+              type="datetime-local"
+              value={toDateTimeLocalValue(event.date)}
+              onChange={(e) => rescheduleEvent(event.id, e.target.value)}
+              className="w-fit rounded border border-slate-200 px-2 py-1 text-xs text-slate-600"
+            />
           </div>
         </div>
         <button
@@ -835,26 +781,12 @@ export default function Home() {
                   placeholder="Bijv. Verjaardag oma, Tandarts..."
                   className="min-w-[180px] flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
                 />
-                <div className="flex flex-col gap-0.5">
-                  <label className="text-[10px] text-slate-400">Start</label>
-                  <input
-                    type="datetime-local"
-                    value={newEventDate}
-                    onChange={(e) => setNewEventDate(e.target.value)}
-                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
-                  />
-                </div>
-                <div className="flex flex-col gap-0.5">
-                  <label className="text-[10px] text-slate-400">
-                    Tot en met (optioneel, voor meerdaagse activiteiten)
-                  </label>
-                  <input
-                    type="date"
-                    value={newEventEndDate}
-                    onChange={(e) => setNewEventEndDate(e.target.value)}
-                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
-                  />
-                </div>
+                <input
+                  type="datetime-local"
+                  value={newEventDate}
+                  onChange={(e) => setNewEventDate(e.target.value)}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
+                />
                 <input
                   value={newEventDescription}
                   onChange={(e) => setNewEventDescription(e.target.value)}
