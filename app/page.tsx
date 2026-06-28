@@ -29,6 +29,7 @@ type Event = {
   title: string;
   description: string | null;
   date: string;
+  endDate: string | null;
   createdBy: Member | null;
   assignees: Member[];
 };
@@ -101,6 +102,23 @@ function toggleId(ids: string[], id: string): string[] {
   return ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
 }
 
+// `new Date("2026-07-02T14:30")` parses the string as local time in
+// whichever timezone runs the code. Doing this on the client (the user's
+// own timezone) before sending it gives a correct, unambiguous ISO string.
+function localDateTimeToIso(value: string): string {
+  return new Date(value).toISOString();
+}
+
+// Date-only values (e.g. "2026-07-02") are for whole days, not a moment in
+// time, so anchor them to local midnight before converting to ISO.
+function localDateToIso(value: string): string {
+  return new Date(`${value}T00:00`).toISOString();
+}
+
+function isMultiDay(event: { endDate: string | null }) {
+  return event.endDate !== null;
+}
+
 const WEEKDAY_LABELS = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"];
 
 export default function Home() {
@@ -117,8 +135,10 @@ export default function Home() {
   const [newTaskFrequency, setNewTaskFrequency] = useState<Frequency>("WEEKLY");
   const [newTaskAssigneeIds, setNewTaskAssigneeIds] = useState<string[]>([]);
   const [newMemberName, setNewMemberName] = useState("");
+  const [newEventMode, setNewEventMode] = useState<"single" | "multiday">("single");
   const [newEventTitle, setNewEventTitle] = useState("");
   const [newEventDate, setNewEventDate] = useState("");
+  const [newEventEndDate, setNewEventEndDate] = useState("");
   const [newEventDescription, setNewEventDescription] = useState("");
   const [newEventAssigneeIds, setNewEventAssigneeIds] = useState<string[]>([]);
 
@@ -191,7 +211,8 @@ export default function Home() {
   );
 
   const upcomingEvents = useMemo(
-    () => sortedEvents.filter((e) => new Date(e.date) >= startOfToday()),
+    () =>
+      sortedEvents.filter((e) => new Date(e.endDate ?? e.date) >= startOfToday()),
     [sortedEvents]
   );
 
@@ -199,10 +220,13 @@ export default function Home() {
     const map = new Map<number, Event[]>();
     weekDays.forEach((d) => map.set(d.getTime(), []));
     sortedEvents.forEach((e) => {
-      const key = startOfDayOf(new Date(e.date)).getTime();
-      if (map.has(key)) {
-        map.get(key)!.push(e);
-      }
+      const start = startOfDayOf(new Date(e.date));
+      const end = startOfDayOf(new Date(e.endDate ?? e.date));
+      weekDays.forEach((day) => {
+        if (day.getTime() >= start.getTime() && day.getTime() <= end.getTime()) {
+          map.get(day.getTime())!.push(e);
+        }
+      });
     });
     return map;
   }, [sortedEvents, weekDays]);
@@ -270,12 +294,19 @@ export default function Home() {
   async function addEvent(e: React.FormEvent) {
     e.preventDefault();
     if (!newEventTitle.trim() || !newEventDate) return;
+    if (newEventMode === "multiday" && !newEventEndDate) return;
+    const date =
+      newEventMode === "single"
+        ? localDateTimeToIso(newEventDate)
+        : localDateToIso(newEventDate);
+    const endDate = newEventMode === "multiday" ? localDateToIso(newEventEndDate) : null;
     await fetch("/api/events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: newEventTitle.trim(),
-        date: newEventDate,
+        date,
+        endDate,
         description: newEventDescription.trim() || null,
         createdById: activeMemberId || null,
         assigneeIds: newEventAssigneeIds,
@@ -283,6 +314,7 @@ export default function Home() {
     });
     setNewEventTitle("");
     setNewEventDate("");
+    setNewEventEndDate("");
     setNewEventDescription("");
     setNewEventAssigneeIds([]);
     loadAll();
@@ -303,12 +335,22 @@ export default function Home() {
     loadAll();
   }
 
-  async function rescheduleEvent(id: string, date: string) {
-    if (!date) return;
+  async function rescheduleEvent(id: string, dateTimeLocalValue: string) {
+    if (!dateTimeLocalValue) return;
     await fetch(`/api/events/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date }),
+      body: JSON.stringify({ date: localDateTimeToIso(dateTimeLocalValue) }),
+    });
+    loadAll();
+  }
+
+  async function rescheduleEventDay(id: string, field: "date" | "endDate", dateValue: string) {
+    if (!dateValue) return;
+    await fetch(`/api/events/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: localDateToIso(dateValue) }),
     });
     loadAll();
   }
@@ -482,6 +524,7 @@ export default function Home() {
   }
 
   function renderCompactEvent(event: Event) {
+    const multiDay = isMultiDay(event);
     return (
       <div
         key={event.id}
@@ -490,7 +533,12 @@ export default function Home() {
         <div className="flex items-start justify-between gap-2">
           <span className="break-words font-medium leading-snug text-amber-800">
             📅 {event.title}
-            {hasTime(event.date) && ` · ${formatTime(event.date)}`}
+            {multiDay && (
+              <span className="ml-1 rounded-full bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                meerdaags
+              </span>
+            )}
+            {!multiDay && hasTime(event.date) && ` · ${formatTime(event.date)}`}
           </span>
           <button
             onClick={() => removeEvent(event.id)}
@@ -506,18 +554,38 @@ export default function Home() {
         {event.assignees.length > 0 && (
           <div className="mt-1">{renderAssigneeBadges(event.assignees)}</div>
         )}
-        <input
-          type="datetime-local"
-          value={toDateTimeLocalValue(event.date)}
-          onChange={(e) => rescheduleEvent(event.id, e.target.value)}
-          title="Verplaats naar een andere dag/tijd"
-          className="mt-1.5 w-full rounded border border-amber-200 bg-white px-1 py-0.5 text-xs text-amber-700"
-        />
+        {multiDay ? (
+          <div className="mt-1.5 flex gap-1">
+            <input
+              type="date"
+              value={event.date.slice(0, 10)}
+              onChange={(e) => rescheduleEventDay(event.id, "date", e.target.value)}
+              title="Startdag"
+              className="w-full rounded border border-amber-200 bg-white px-1 py-0.5 text-xs text-amber-700"
+            />
+            <input
+              type="date"
+              value={(event.endDate as string).slice(0, 10)}
+              onChange={(e) => rescheduleEventDay(event.id, "endDate", e.target.value)}
+              title="Einddag"
+              className="w-full rounded border border-amber-200 bg-white px-1 py-0.5 text-xs text-amber-700"
+            />
+          </div>
+        ) : (
+          <input
+            type="datetime-local"
+            value={toDateTimeLocalValue(event.date)}
+            onChange={(e) => rescheduleEvent(event.id, e.target.value)}
+            title="Verplaats naar een andere dag/tijd"
+            className="mt-1.5 w-full rounded border border-amber-200 bg-white px-1 py-0.5 text-xs text-amber-700"
+          />
+        )}
       </div>
     );
   }
 
   function renderEventRow(event: Event) {
+    const multiDay = isMultiDay(event);
     return (
       <div
         key={event.id}
@@ -527,8 +595,10 @@ export default function Home() {
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{event.title}</span>
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
-              {formatDate(event.date)}
-              {hasTime(event.date) && ` ${formatTime(event.date)}`}
+              {multiDay
+                ? `${formatDate(event.date)} – ${formatDate(event.endDate as string)}`
+                : formatDate(event.date) +
+                  (hasTime(event.date) ? ` ${formatTime(event.date)}` : "")}
             </span>
           </div>
           <div className="mt-1.5">
@@ -545,15 +615,38 @@ export default function Home() {
               Toegevoegd door {event.createdBy.name}
             </p>
           )}
-          <div className="mt-2 flex flex-col gap-0.5">
-            <label className="text-[10px] text-slate-400">Datum en tijd</label>
-            <input
-              type="datetime-local"
-              value={toDateTimeLocalValue(event.date)}
-              onChange={(e) => rescheduleEvent(event.id, e.target.value)}
-              className="w-fit rounded border border-slate-200 px-2 py-1 text-xs text-slate-600"
-            />
-          </div>
+          {multiDay ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <div className="flex flex-col gap-0.5">
+                <label className="text-[10px] text-slate-400">Van</label>
+                <input
+                  type="date"
+                  value={event.date.slice(0, 10)}
+                  onChange={(e) => rescheduleEventDay(event.id, "date", e.target.value)}
+                  className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600"
+                />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <label className="text-[10px] text-slate-400">Tot en met</label>
+                <input
+                  type="date"
+                  value={(event.endDate as string).slice(0, 10)}
+                  onChange={(e) => rescheduleEventDay(event.id, "endDate", e.target.value)}
+                  className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="mt-2 flex flex-col gap-0.5">
+              <label className="text-[10px] text-slate-400">Datum en tijd</label>
+              <input
+                type="datetime-local"
+                value={toDateTimeLocalValue(event.date)}
+                onChange={(e) => rescheduleEvent(event.id, e.target.value)}
+                className="w-fit rounded border border-slate-200 px-2 py-1 text-xs text-slate-600"
+              />
+            </div>
+          )}
         </div>
         <button
           onClick={() => removeEvent(event.id)}
@@ -774,19 +867,66 @@ export default function Home() {
               Nieuwe activiteit
             </h2>
             <form onSubmit={addEvent} className="space-y-2">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNewEventMode("single")}
+                  className={`rounded-lg px-3 py-1 text-xs font-medium ${
+                    newEventMode === "single"
+                      ? "bg-slate-800 text-white"
+                      : "border border-slate-200 bg-white text-slate-500"
+                  }`}
+                >
+                  Eén moment (met tijd)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewEventMode("multiday")}
+                  className={`rounded-lg px-3 py-1 text-xs font-medium ${
+                    newEventMode === "multiday"
+                      ? "bg-slate-800 text-white"
+                      : "border border-slate-200 bg-white text-slate-500"
+                  }`}
+                >
+                  Meerdere dagen (bijv. vakantie)
+                </button>
+              </div>
               <div className="flex flex-wrap gap-2">
                 <input
                   value={newEventTitle}
                   onChange={(e) => setNewEventTitle(e.target.value)}
-                  placeholder="Bijv. Verjaardag oma, Tandarts..."
+                  placeholder="Bijv. Verjaardag oma, Tandarts, Vakantie..."
                   className="min-w-[180px] flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
                 />
-                <input
-                  type="datetime-local"
-                  value={newEventDate}
-                  onChange={(e) => setNewEventDate(e.target.value)}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
-                />
+                {newEventMode === "single" ? (
+                  <input
+                    type="datetime-local"
+                    value={newEventDate}
+                    onChange={(e) => setNewEventDate(e.target.value)}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
+                  />
+                ) : (
+                  <>
+                    <div className="flex flex-col gap-0.5">
+                      <label className="text-[10px] text-slate-400">Van</label>
+                      <input
+                        type="date"
+                        value={newEventDate}
+                        onChange={(e) => setNewEventDate(e.target.value)}
+                        className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <label className="text-[10px] text-slate-400">Tot en met</label>
+                      <input
+                        type="date"
+                        value={newEventEndDate}
+                        onChange={(e) => setNewEventEndDate(e.target.value)}
+                        className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
+                      />
+                    </div>
+                  </>
+                )}
                 <input
                   value={newEventDescription}
                   onChange={(e) => setNewEventDescription(e.target.value)}
