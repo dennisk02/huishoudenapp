@@ -78,6 +78,14 @@ function toDateTimeLocalValue(dateStr: string) {
   )}:${pad(d.getMinutes())}`;
 }
 
+// Using `.toISOString().slice(0, 10)` reads the UTC calendar date, which can
+// be a day off from the user's local date. This reads the local date instead.
+function toDateOnlyValue(dateStr: string) {
+  const d = new Date(dateStr);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function startOfWeek(date: Date) {
   const d = startOfDayOf(date);
   const day = d.getDay();
@@ -488,7 +496,7 @@ export default function Home() {
 
   function renderCompactTask(task: Task) {
     const overdue = isOverdue(task);
-    const dateValue = new Date(task.dueDate).toISOString().slice(0, 10);
+    const dateValue = toDateOnlyValue(task.dueDate);
     return (
       <div
         key={task.id}
@@ -555,20 +563,20 @@ export default function Home() {
           <div className="mt-1">{renderAssigneeBadges(event.assignees)}</div>
         )}
         {multiDay ? (
-          <div className="mt-1.5 flex gap-1">
+          <div className="mt-1.5 flex flex-col gap-1">
             <input
               type="date"
-              value={event.date.slice(0, 10)}
+              value={toDateOnlyValue(event.date)}
               onChange={(e) => rescheduleEventDay(event.id, "date", e.target.value)}
               title="Startdag"
-              className="w-full rounded border border-amber-200 bg-white px-1 py-0.5 text-xs text-amber-700"
+              className="w-full min-w-0 rounded border border-amber-200 bg-white px-1 py-0.5 text-xs text-amber-700"
             />
             <input
               type="date"
-              value={(event.endDate as string).slice(0, 10)}
+              value={toDateOnlyValue(event.endDate as string)}
               onChange={(e) => rescheduleEventDay(event.id, "endDate", e.target.value)}
               title="Einddag"
-              className="w-full rounded border border-amber-200 bg-white px-1 py-0.5 text-xs text-amber-700"
+              className="w-full min-w-0 rounded border border-amber-200 bg-white px-1 py-0.5 text-xs text-amber-700"
             />
           </div>
         ) : (
@@ -621,7 +629,7 @@ export default function Home() {
                 <label className="text-[10px] text-slate-400">Van</label>
                 <input
                   type="date"
-                  value={event.date.slice(0, 10)}
+                  value={toDateOnlyValue(event.date)}
                   onChange={(e) => rescheduleEventDay(event.id, "date", e.target.value)}
                   className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600"
                 />
@@ -630,7 +638,7 @@ export default function Home() {
                 <label className="text-[10px] text-slate-400">Tot en met</label>
                 <input
                   type="date"
-                  value={(event.endDate as string).slice(0, 10)}
+                  value={toDateOnlyValue(event.endDate as string)}
                   onChange={(e) => rescheduleEventDay(event.id, "endDate", e.target.value)}
                   className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600"
                 />
